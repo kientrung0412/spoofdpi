@@ -1,0 +1,129 @@
+name: Release (tag)
+
+# Pushing a tag such as `v2.0.0-beta.1` builds every platform and publishes a
+# GitHub release. Tags with a hyphen (pre-release versions) are marked as
+# pre-releases.
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  WINDIVERT_VERSION: '2.2.2'
+  WINTUN_VERSION: '0.14.1'
+
+jobs:
+  build:
+    name: build ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - name: windows-x86_64
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+          - name: linux-x86_64
+            os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - name: macos-arm64
+            os: macos-latest
+            target: aarch64-apple-darwin
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build
+        shell: bash
+        env:
+          SPOOFDPI_BUILD: ${{ github.ref_name }}
+        run: |
+          export SPOOFDPI_COMMIT=$(git rev-parse --short HEAD)
+          cargo build --release --target ${{ matrix.target }}
+
+      - name: Package (Windows, with WinDivert and Wintun)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dist = "spoofdpi-${{ matrix.name }}"
+          New-Item -ItemType Directory -Force $dist | Out-Null
+          Copy-Item "target/${{ matrix.target }}/release/spoofdpi.exe" $dist
+
+          Invoke-WebRequest "https://github.com/basil00/WinDivert/releases/download/v$env:WINDIVERT_VERSION/WinDivert-$env:WINDIVERT_VERSION-A.zip" -OutFile windivert.zip
+          Expand-Archive windivert.zip -DestinationPath windivert
+          $wd = (Get-ChildItem windivert -Directory | Select-Object -First 1).FullName
+          Copy-Item "$wd/x64/WinDivert.dll", "$wd/x64/WinDivert64.sys" $dist
+          Copy-Item "$wd/LICENSE" "$dist/LICENSE-WinDivert.txt"
+
+          Invoke-WebRequest "https://www.wintun.net/builds/wintun-$env:WINTUN_VERSION.zip" -OutFile wintun.zip
+          Expand-Archive wintun.zip -DestinationPath wintun
+          Copy-Item "wintun/wintun/bin/amd64/wintun.dll" $dist
+          Copy-Item "wintun/wintun/LICENSE.txt" "$dist/LICENSE-Wintun.txt"
+
+          Copy-Item LICENSE "$dist/LICENSE.txt"
+          & "$dist/spoofdpi.exe" --version
+          Compress-Archive -Path "$dist/*" -DestinationPath "$dist.zip"
+
+      - name: Package (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          dist="spoofdpi-${{ matrix.name }}"
+          mkdir -p "$dist"
+          cp "target/${{ matrix.target }}/release/spoofdpi" LICENSE "$dist/"
+          "$dist/spoofdpi" --version
+          tar -czf "$dist.tar.gz" "$dist"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: spoofdpi-${{ matrix.name }}
+          path: |
+            spoofdpi-${{ matrix.name }}.zip
+            spoofdpi-${{ matrix.name }}.tar.gz
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Checksums
+        working-directory: dist
+        run: sha256sum * > checksums.txt && cat checksums.txt
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          flags=""
+          case "$TAG" in *-*) flags="--prerelease" ;; esac
+          cat > notes.md <<'EOF'
+          Rust rewrite of spoofdpi with Windows 10/11 x64 support.
+
+          **Windows:** download `spoofdpi-windows-x86_64.zip`, extract it and run `spoofdpi.exe`
+          (HTTP proxy on `127.0.0.1:8080`). Add `--auto-configure-network` to set the Windows proxy
+          automatically; it is restored on exit. Fake packets (`--https-fake-count`) and
+          `--app-mode tun` need the bundled WinDivert/Wintun files next to the exe and must be run
+          as Administrator.
+          EOF
+          gh release create "$TAG" dist/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "$TAG" \
+            --notes-file notes.md \
+            $flags
