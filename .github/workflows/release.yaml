@@ -11,6 +11,9 @@ on:
   push:
     branches:
       - main
+      # Branch pushes only register the workflow for manual runs; all jobs
+      # are skipped unless release-please created a release.
+      - rust-rewrite
     tags: ['v*']
   workflow_dispatch:
     inputs:
