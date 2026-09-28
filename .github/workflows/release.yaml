@@ -1,13 +1,21 @@
 name: Release
 
+# Three ways to publish:
+# - release-please on `main` creates the release, this workflow attaches files;
+# - pushing a `v*` tag;
+# - running the workflow manually with a tag name (the tag is created on the
+#   selected branch's commit if it does not exist yet).
+# Tags containing a hyphen (e.g. v2.0.0-beta.1) are published as pre-releases.
+
 on:
   push:
     branches:
       - main
+    tags: ['v*']
   workflow_dispatch:
     inputs:
       tag_name:
-        description: 'Target Tag Name (e.g., v2.0.0)'
+        description: 'Target Tag Name (e.g., v2.0.0-beta.1)'
         required: true
         type: string
 
@@ -22,7 +30,7 @@ env:
 
 jobs:
   release-please:
-    if: github.event_name == 'push' && !github.event.repository.fork
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !github.event.repository.fork
     name: release-please
     runs-on: ubuntu-latest
     outputs:
@@ -39,15 +47,15 @@ jobs:
     needs: release-please
     if: |
       !github.event.repository.fork && !cancelled() && (
-        (github.event_name == 'push' && needs.release-please.outputs.release_created == 'true') ||
-        github.event_name == 'workflow_dispatch'
+        github.event_name != 'push' || startsWith(github.ref, 'refs/tags/') ||
+        needs.release-please.outputs.release_created == 'true'
       )
     name: build ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
     env:
-      RELEASE_TAG: ${{ needs.release-please.outputs.tag_name || inputs.tag_name }}
+      RELEASE_TAG: ${{ needs.release-please.outputs.tag_name || inputs.tag_name || github.ref_name }}
     strategy:
-      fail-fast: false
+      fail-fast: true
       matrix:
         include:
           - name: windows-x86_64
@@ -61,17 +69,17 @@ jobs:
             target: aarch64-apple-darwin
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ env.RELEASE_TAG }}
 
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
 
+      - uses: Swatinem/rust-cache@v2
+
       - name: Build
         shell: bash
         env:
-          SPOOFDPI_BUILD: release
+          SPOOFDPI_BUILD: ${{ env.RELEASE_TAG }}
         run: |
           export SPOOFDPI_COMMIT=$(git rev-parse --short HEAD)
           cargo build --release --target ${{ matrix.target }}
@@ -80,15 +88,16 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
           $dist = "spoofdpi-${{ matrix.name }}"
           New-Item -ItemType Directory -Force $dist | Out-Null
           Copy-Item "target/${{ matrix.target }}/release/spoofdpi.exe" $dist
 
           Invoke-WebRequest "https://github.com/basil00/WinDivert/releases/download/v$env:WINDIVERT_VERSION/WinDivert-$env:WINDIVERT_VERSION-A.zip" -OutFile windivert.zip
           Expand-Archive windivert.zip -DestinationPath windivert
-          $wd = Get-ChildItem windivert | Select-Object -First 1
-          Copy-Item "$($wd.FullName)/x64/WinDivert.dll", "$($wd.FullName)/x64/WinDivert64.sys" $dist
-          Copy-Item "$($wd.FullName)/LICENSE" "$dist/LICENSE-WinDivert.txt"
+          $wd = (Get-ChildItem windivert -Directory | Select-Object -First 1).FullName
+          Copy-Item "$wd/x64/WinDivert.dll", "$wd/x64/WinDivert64.sys" $dist
+          Copy-Item "$wd/LICENSE" "$dist/LICENSE-WinDivert.txt"
 
           Invoke-WebRequest "https://www.wintun.net/builds/wintun-$env:WINTUN_VERSION.zip" -OutFile wintun.zip
           Expand-Archive wintun.zip -DestinationPath wintun
@@ -96,6 +105,7 @@ jobs:
           Copy-Item "wintun/wintun/LICENSE.txt" "$dist/LICENSE-Wintun.txt"
 
           Copy-Item LICENSE "$dist/LICENSE.txt"
+          & "$dist/spoofdpi.exe" --version
           Compress-Archive -Path "$dist/*" -DestinationPath "$dist.zip"
 
       - name: Package (Unix)
@@ -105,11 +115,57 @@ jobs:
           dist="spoofdpi-${{ matrix.name }}"
           mkdir -p "$dist"
           cp "target/${{ matrix.target }}/release/spoofdpi" LICENSE "$dist/"
+          "$dist/spoofdpi" --version
           tar -czf "$dist.tar.gz" "$dist"
 
-      - name: Upload to release
-        shell: bash
+      - uses: actions/upload-artifact@v4
+        with:
+          name: spoofdpi-${{ matrix.name }}
+          path: |
+            spoofdpi-${{ matrix.name }}.zip
+            spoofdpi-${{ matrix.name }}.tar.gz
+          if-no-files-found: error
+
+  publish:
+    needs: [release-please, build]
+    if: ${{ !cancelled() && needs.build.result == 'success' }}
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: ${{ needs.release-please.outputs.tag_name || inputs.tag_name || github.ref_name }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Checksums
+        working-directory: dist
+        run: sha256sum * > checksums.txt && cat checksums.txt
+
+      - name: Create release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ env.RELEASE_TAG }}
         run: |
-          gh release upload "$RELEASE_TAG" spoofdpi-${{ matrix.name }}.* --clobber
+          flags=""
+          case "$TAG" in *-*) flags="--prerelease" ;; esac
+          cat > notes.md <<'EOF'
+          Rust rewrite of spoofdpi with Windows 10/11 x64 support.
+
+          **Windows:** download `spoofdpi-windows-x86_64.zip`, extract it and run `spoofdpi.exe`
+          (HTTP proxy on `127.0.0.1:8080`). Add `--auto-configure-network` to set the Windows proxy
+          automatically; it is restored on exit. Fake packets (`--https-fake-count`) and
+          `--app-mode tun` need the bundled WinDivert/Wintun files next to the exe and must be run
+          as Administrator.
+          EOF
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            # Created by release-please: just attach the files.
+            gh release upload "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$TAG" dist/* \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --title "$TAG" \
+              --notes-file notes.md \
+              $flags
+          fi
