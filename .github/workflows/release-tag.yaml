@@ -1,17 +1,25 @@
 name: Release (tag)
 
-# Pushing a tag such as `v2.0.0-beta.1` builds every platform and publishes a
-# GitHub release. Tags with a hyphen (pre-release versions) are marked as
-# pre-releases.
+# Pushing a tag such as `v2.0.0-beta.1`, or running this workflow manually
+# with a tag name, builds every platform and publishes a GitHub release for
+# that tag (created on the built commit if it does not exist yet). Tags with
+# a hyphen (pre-release versions) are marked as pre-releases.
 
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to create, e.g. v2.0.0-beta.1'
+        required: true
+        type: string
 
 permissions:
   contents: write
 
 env:
+  RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
   CARGO_TERM_COLOR: always
   WINDIVERT_VERSION: '2.2.2'
   WINTUN_VERSION: '0.14.1'
@@ -45,7 +53,7 @@ jobs:
       - name: Build
         shell: bash
         env:
-          SPOOFDPI_BUILD: ${{ github.ref_name }}
+          SPOOFDPI_BUILD: ${{ inputs.tag || github.ref_name }}
         run: |
           export SPOOFDPI_COMMIT=$(git rev-parse --short HEAD)
           cargo build --release --target ${{ matrix.target }}
@@ -108,7 +116,7 @@ jobs:
       - name: Create release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ env.RELEASE_TAG }}
         run: |
           flags=""
           case "$TAG" in *-*) flags="--prerelease" ;; esac
