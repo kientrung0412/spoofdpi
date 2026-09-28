@@ -4,18 +4,21 @@
 
 spoofdpi is a proxy tool that bypasses Deep Packet Inspection (DPI) — the technique used by many internet censorship systems to inspect and block traffic. It works by fragmenting and desynchronizing TLS handshakes so that DPI middleboxes misparse the connection while the destination server handles it normally.
 
+This branch is a Rust implementation (see `Cargo.toml`, sources under `src/`). Windows 10/11 x64 is a
+primary target; keep `cargo build --target x86_64-pc-windows-gnu` compiling.
+
 ## Testing
 
 ```console
-$ go test -tags network ./... -v
+$ cargo test
 ```
 
 ## Formatting
 
 ```console
-$ golangci-lint fmt --diff # check
-$ golangci-lint fmt        # format
-$ golangci-lint run        # lint (config: .golangci.yml)
+$ cargo fmt --check                            # check
+$ cargo fmt                                    # format
+$ cargo clippy --all-targets -- -D warnings    # lint
 ```
 
 Or use `make fmt` / `make lint`.

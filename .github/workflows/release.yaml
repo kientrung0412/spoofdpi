@@ -7,17 +7,18 @@ on:
   workflow_dispatch:
     inputs:
       tag_name:
-        description: 'Target Tag Name (e.g., v1.2.0)'
+        description: 'Target Tag Name (e.g., v2.0.0)'
         required: true
         type: string
 
 permissions:
   contents: write
-  id-token: write
   pull-requests: write
 
 env:
-  GO_VERSION: '1.26'
+  CARGO_TERM_COLOR: always
+  WINDIVERT_VERSION: '2.2.2'
+  WINTUN_VERSION: '0.14.1'
 
 jobs:
   release-please:
@@ -34,64 +35,81 @@ jobs:
           config-file: .github/release-please-config.json
           manifest-file: .manifest.json
 
-  build-and-publish:
+  build:
     needs: release-please
     if: |
       !github.event.repository.fork && !cancelled() && (
         (github.event_name == 'push' && needs.release-please.outputs.release_created == 'true') ||
         github.event_name == 'workflow_dispatch'
       )
-    name: build-and-publish
-    runs-on: macos-latest
+    name: build ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
     env:
       RELEASE_TAG: ${{ needs.release-please.outputs.tag_name || inputs.tag_name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: windows-x86_64
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+          - name: linux-x86_64
+            os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - name: macos-arm64
+            os: macos-latest
+            target: aarch64-apple-darwin
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
           ref: ${{ env.RELEASE_TAG }}
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          go-version: ${{ env.GO_VERSION }}
+          targets: ${{ matrix.target }}
 
-      - name: Install Syft
-        run: |
-          curl -sSfL https://get.anchore.io/syft | sudo sh -s -- -b /usr/local/bin
-
-      # v4.0.0
-      - uses: sigstore/cosign-installer@faadad0cce49287aee09b3a48701e75088a2c6ad
-
-      # Run GoReleaser to build binaries, archives, packages, and SBOMs.
-      - name: Build Artifacts
-        # v6.4.0
-        uses: goreleaser/goreleaser-action@e435ccd777264be153ace6237001ef4d979d3a7a
-        with:
-          distribution: goreleaser
-          version: '~> v2'
-          args: release --clean --skip=publish
+      - name: Build
+        shell: bash
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GORELEASER_CURRENT_TAG: ${{ env.RELEASE_TAG }}
+          SPOOFDPI_BUILD: release
+        run: |
+          export SPOOFDPI_COMMIT=$(git rev-parse --short HEAD)
+          cargo build --release --target ${{ matrix.target }}
 
-      # Upload all generated artifacts to the release.
-      # GitHub auto-marks this as latest by semver rules (no prerelease/draft).
-      - name: Upload Artifacts
+      - name: Package (Windows, with WinDivert and Wintun)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $dist = "spoofdpi-${{ matrix.name }}"
+          New-Item -ItemType Directory -Force $dist | Out-Null
+          Copy-Item "target/${{ matrix.target }}/release/spoofdpi.exe" $dist
+
+          Invoke-WebRequest "https://github.com/basil00/WinDivert/releases/download/v$env:WINDIVERT_VERSION/WinDivert-$env:WINDIVERT_VERSION-A.zip" -OutFile windivert.zip
+          Expand-Archive windivert.zip -DestinationPath windivert
+          $wd = Get-ChildItem windivert | Select-Object -First 1
+          Copy-Item "$($wd.FullName)/x64/WinDivert.dll", "$($wd.FullName)/x64/WinDivert64.sys" $dist
+          Copy-Item "$($wd.FullName)/LICENSE" "$dist/LICENSE-WinDivert.txt"
+
+          Invoke-WebRequest "https://www.wintun.net/builds/wintun-$env:WINTUN_VERSION.zip" -OutFile wintun.zip
+          Expand-Archive wintun.zip -DestinationPath wintun
+          Copy-Item "wintun/wintun/bin/amd64/wintun.dll" $dist
+          Copy-Item "wintun/wintun/LICENSE.txt" "$dist/LICENSE-Wintun.txt"
+
+          Copy-Item LICENSE "$dist/LICENSE.txt"
+          Compress-Archive -Path "$dist/*" -DestinationPath "$dist.zip"
+
+      - name: Package (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          dist="spoofdpi-${{ matrix.name }}"
+          mkdir -p "$dist"
+          cp "target/${{ matrix.target }}/release/spoofdpi" LICENSE "$dist/"
+          tar -czf "$dist.tar.gz" "$dist"
+
+      - name: Upload to release
+        shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG_NAME="${{ env.RELEASE_TAG }}"
-
-          echo "Uploading artifacts to release: $TAG_NAME"
-
-          gh release upload "$TAG_NAME" \
-            dist/*.tar.gz \
-            dist/*.json \
-            dist/*.deb \
-            dist/*.apk \
-            dist/*.rpm \
-            dist/*.zst \
-            dist/checksums.txt \
-            --clobber
+          gh release upload "$RELEASE_TAG" spoofdpi-${{ matrix.name }}.* --clobber

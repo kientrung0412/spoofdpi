@@ -1,11 +1,18 @@
 # Code Quality
 
-This project utilizes [golangci-lint](https://github.com/golangci/golangci-lint) as the **single entry point** for both code quality checks (linting) and style enforcement (formatting). This ensures consistent code standards across the entire project.
+Formatting uses `rustfmt` (config: `rustfmt.toml`) and linting uses `clippy`. CI rejects
+formatting differences and clippy warnings.
 
 ```console
-- Format the code (using internal tools like goimports, gofmt)
-$ golangci-lint fmt
+- Format the code
+$ cargo fmt
 
-- Run all quality checks
-$ golangci-lint run
+- Check formatting without changing files
+$ cargo fmt --check
+
+- Run lints (also for the Windows target)
+$ cargo clippy --all-targets -- -D warnings
+$ cargo clippy --target x86_64-pc-windows-gnu -- -D warnings
 ```
+
+Or use `make fmt`, `make fmt-check` and `make lint`.

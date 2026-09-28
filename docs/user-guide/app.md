@@ -115,8 +115,13 @@ no-tui = true
 
 Specifies whether to automatically set up the system-wide proxy configuration. `(default: false)`
 
-!!! important
-    This option is currently only supported on **macOS**.
+The previous settings are restored when spoofdpi exits.
+
+| Platform | `http` / `socks5` mode | `tun` mode |
+| :--- | :--- | :--- |
+| Windows | sets the user's proxy settings (WinINet); `socks5` uses a local PAC file | adds routes through the Wintun adapter |
+| macOS | sets a proxy auto-config URL with `networksetup` | not supported |
+| Linux | not supported | adds policy routes with `ip` |
 
 ### Usage
 

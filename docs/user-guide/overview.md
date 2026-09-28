@@ -19,7 +19,9 @@ For example, if `config.toml` contains `listen-addr = "127.0.0.1:8080"`, but the
 If a specific path is not provided via a `--config` flag, spoofdpi will search for `spoofdpi.toml` in the following locations in order, applying only the first file found:
 
 - `$SPOOFDPI_CONFIG` environment variable
-- `/etc/spoofdpi.toml`
+- `/etc/spoofdpi.toml` (Linux/macOS)
+- `spoofdpi.toml` next to `spoofdpi.exe` (Windows)
+- `%APPDATA%\spoofdpi\spoofdpi.toml` (Windows)
 - `$XDG_CONFIG_HOME/spoofdpi/spoofdpi.toml`
 - `$HOME/.config/spoofdpi/spoofdpi.toml`
 

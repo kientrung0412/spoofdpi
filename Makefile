@@ -1,19 +1,26 @@
-.PHONY: build test lint fmt fmt-check pre-commit claude
+.PHONY: build build-windows release test lint fmt fmt-check pre-commit claude
 
 build:
-	go build ./cmd/...
+	cargo build
+
+build-windows:
+	cargo build --release --target x86_64-pc-windows-gnu
+
+release:
+	cargo build --release
 
 test:
-	go test $(ARGS) -race -tags network ./... -v
+	cargo test $(ARGS)
 
 lint:
-	golangci-lint run
+	cargo clippy --all-targets -- -D warnings
+	cargo clippy --target x86_64-pc-windows-gnu -- -D warnings
 
 fmt:
-	golangci-lint fmt
+	cargo fmt
 
 fmt-check:
-	golangci-lint fmt --diff
+	cargo fmt --check
 
 pre-commit:
 	$(MAKE) test

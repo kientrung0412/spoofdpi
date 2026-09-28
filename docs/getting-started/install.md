@@ -1,109 +1,55 @@
-## Requirements
+## Windows 10/11 (x64)
 
-spoofdpi requires the [libpcap](https://github.com/the-tcpdump-group/libpcap) library on all operating systems **except Linux**.
-
-```console
-- macOS
-$ brew install libpcap 
-
-- FreeBSD
-$ pkg install libpcap
-
-- Linux
-$ echo "libpcap is not required on Linux"
-
-- ...
-```
-
-## Install Using Script
-You can install `spoofdpi` using the provided script. The binary will be installed to `/usr/local/bin`.
-```console
-$ curl -fsSL https://raw.githubusercontent.com/xvzc/spoofdpi/main/install.sh | bash
-```
-
-## Install With Package Manager
-You can also install spoofdpi using package managers of your choice, but note that the version may not be the latest, depending on the [Packaging Status](#packaging-status).
+1. Download `spoofdpi-windows-x86_64.zip` from the [releases page](https://github.com/xvzc/spoofdpi/releases) and extract it anywhere.
+2. Open a terminal in that folder and run:
 
 ```console
-- macOS
-$ brew install spoofdpi
-
-- Arch Linux
-$ yay -S spoofdpi
-
-- Fedora
-$ sudo dnf install spoofdpi
-
-- FreeBSD
-$ pkg install spoofdpi
-
-- ...
+> spoofdpi.exe
 ```
+
+The release zip also contains the optional runtime files. They must stay in the same folder as
+`spoofdpi.exe`:
+
+| File | Needed for | Notes |
+| :--- | :--- | :--- |
+| `WinDivert.dll`, `WinDivert64.sys` | fake packets (`https.fake-count`, `udp.fake-count`) | run as Administrator |
+| `wintun.dll` | `tun` mode | run as Administrator |
+
+Plain HTTP/SOCKS5 proxying with packet splitting works without any of them and without
+Administrator rights.
+
+!!! tip
+    Use `--auto-configure-network` to point the Windows proxy settings at spoofdpi. The previous
+    settings are restored when spoofdpi exits, including when the console window is closed.
+
+## Linux and macOS
+
+Prebuilt binaries are attached to each release. Fake packets on Linux use raw sockets and need
+root (or `CAP_NET_RAW`); `tun` mode needs root. Fake packets and `tun` mode are not available on
+macOS in this version.
 
 ## Manual Build
-To build spoofdpi manually, ensure that you have [Go](https://go.dev) **1.26 or higher** and the [libpcap](https://github.com/the-tcpdump-group/libpcap) library installed.
-!!! note 
-    **libpcap** is no longer required on Linux, so `CGO` does not need to be enabled.
-### Git
-If you are building manually from the latest commit, we recommend including the commit hash for better issue tracking.
 
-```sh
-#!/usr/bin/env sh
+Install a Rust toolchain (1.85 or newer) from [rustup.rs](https://rustup.rs), then:
 
-BUILD_INFO="git"
-SRC="spoofdpi"
-DIST="dist"
-
-mkdir -p ./$DIST
-
-git clone https://github.com/xvzc/spoofdpi.git
-
-BUILD_LDFLAGS="-s -w"
-BUILD_LDFLAGS="$BUILD_LDFLAGS -X 'main.commit=$(git -C ./$SRC rev-parse --short HEAD)'"
-BUILD_LDFLAGS="$BUILD_LDFLAGS -X 'main.build=$BUILD_INFO'"
-
-# You can disable CGO on Linux by setting `CGO_ENABLED=0`
-CGO_ENABLED=1 go build -C ./$SRC \
-  -ldflags "$BUILD_LDFLAGS" \
-  -o ../$DIST/spoofdpi ./cmd/spoofdpi
+```console
+$ git clone https://github.com/xvzc/spoofdpi.git
+$ cd spoofdpi
+$ cargo build --release
+$ ./target/release/spoofdpi --version
 ```
 
-### GitHub Release
+To embed the commit hash in `--version`, set `SPOOFDPI_COMMIT` and `SPOOFDPI_BUILD` at build time:
 
-You can also build directly from the release source code. This is particularly useful for platforms where native GitHub Actions runners are unavailable (e.g., FreeBSD), requiring manual packaging.
-
-We recommend injecting version and build information during the build process to help maintainers track issues effectively.
-
-Every release includes a custom source archive (e.g., `spoofdpi-1.1.3.tar.gz`) which contains a `COMMIT` file. You can use this file to embed the commit hash into the binary.
-```bash
-#!/usr/bin/env bash
-
-VERSION="#REPLACE_THIS_WITH_VERSION#"
-BUILD_INFO="freebsd"
-ASSET="spoofdpi-$VERSION.tar.gz"
-SRC="spoofdpi-$VERSION"
-DIST="dist"
-
-curl -fsSL \
-  https://github.com/xvzc/spoofdpi/releases/download/v$VERSION/$ASSET \
-  -o ./$ASSET
-
-tar -xvzf ./spoofdpi-$VERSION.tar.gz
-
-BUILD_LDFLAGS="-s -w"
-BUILD_LDFLAGS="$BUILD_LDFLAGS -X 'main.version=$VERSION'"
-BUILD_LDFLAGS="$BUILD_LDFLAGS -X 'main.commit=$(cat ./$SRC/COMMIT)'"
-BUILD_LDFLAGS="$BUILD_LDFLAGS -X 'main.build=$BUILD_INFO'"
-
-# You can disable CGO on Linux by setting `CGO_ENABLED=0`
-CGO_ENABLED=1 go build -C ./$SRC \
-  -ldflags "$BUILD_LDFLAGS" \
-  -o ../$DIST/spoofdpi ./cmd/spoofdpi
+```console
+$ SPOOFDPI_COMMIT=$(git rev-parse --short HEAD) SPOOFDPI_BUILD=git cargo build --release
 ```
 
+### Cross-compiling for Windows from Linux
 
-## Packaging Status
-<a href="https://repology.org/project/spoofdpi/versions">
-    <img src="https://repology.org/badge/vertical-allrepos/spoofdpi.svg?columns=1" alt="Packaging status">
-</a>
-
+```console
+$ sudo apt install gcc-mingw-w64-x86-64
+$ rustup target add x86_64-pc-windows-gnu
+$ cargo build --release --target x86_64-pc-windows-gnu
+$ ls target/x86_64-pc-windows-gnu/release/spoofdpi.exe
+```

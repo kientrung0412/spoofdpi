@@ -2,7 +2,7 @@
   "bump-minor-pre-major": true,
   "packages": {
     ".": {
-      "release-type": "go"
+      "release-type": "rust"
     }
   }
 }

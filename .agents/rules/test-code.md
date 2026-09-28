@@ -1,39 +1,30 @@
 # Test Code Conventions
 
-Follow the patterns established in `internal/config/*_test.go`.
+Tests live in a `#[cfg(test)] mod tests` at the bottom of the file they cover.
 
 ## Naming
 
-- Method tests: `Test<Type>_<Method>` — e.g. `TestAppOptions_Clone`
-- Free-function tests: `Test<Function>` — e.g. `TestCheckDomainPattern`
-- Subtest names: lowercase phrases — e.g. `"nil receiver"`, `"invalid type"`
+- Name tests after the behaviour, in snake_case: `extract_sni`, `skip_not_inherited`,
+  `fastest_reports_failure`.
 
-## Table-driven tests
+## Table-style tests
 
-Default to table-driven. The slice is always named `tcs`:
+Prefer a list of cases over many near-identical tests:
 
-```go
-tcs := []struct {
-    name    string
-    input   string
-    wantErr bool
-}{
-    {"valid domain", "example.com", false},
-    {"invalid empty", "", true},
+```rust
+let cases = [
+    ("example.com", Some("exact")),
+    ("naver.com", None),
+];
+for (domain, want) in cases {
+    assert_eq!(trie.search(domain), want, "{domain}");
 }
 ```
 
-Use an `assert func(t *testing.T, ...)` field for non-trivial output verification. Use inline `t.Run` blocks when cases are structurally different and don't share a struct cleanly.
+Include the input in the assertion message so a failing case is easy to find.
 
-## Assertions
+## Async and sockets
 
-- `assert` for normal checks, `require` only when the test cannot meaningfully continue on failure.
-- `assert.NotSame` for Clone, `assert.Panics` / `assert.NotPanics` for `Must*` functions.
-
-## Constructing values
-
-Use `lo.ToPtr(...)` from `github.com/samber/lo` for optional pointer fields.
-
-## Coverage
-
-Cover success cases, edge cases, and failure cases. Include a `"nil receiver"` case for methods that accept a receiver.
+- Use `#[tokio::test]` for async code.
+- Bind test servers to `127.0.0.1:0` so tests can run in parallel.
+- Tests must not depend on internet access.

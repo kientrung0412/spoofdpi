@@ -1,7 +1,8 @@
-spoofdpi
-spoofdpi-*
-spoofdpi.*
-!cmd/spoofdpi/
+/target/
+/spoofdpi
+/spoofdpi-*
+/spoofdpi.exe
+*.pdb
 !_assets/*
 out/**
 result

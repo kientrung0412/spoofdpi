@@ -1,0 +1,47 @@
+[package]
+name = "spoofdpi"
+version = "2.0.0"
+edition = "2021"
+rust-version = "1.85"
+description = "Simple and fast anti-censorship tool to bypass DPI"
+license = "Apache-2.0"
+repository = "https://github.com/xvzc/spoofdpi"
+readme = "README.md"
+
+[[bin]]
+name = "spoofdpi"
+path = "src/main.rs"
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+tokio-util = "0.7"
+futures = "0.3"
+clap = { version = "4", features = ["derive", "env"] }
+toml = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+rand = "0.9"
+socket2 = { version = "0.6", features = ["all"] }
+reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider", "http2"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+ratatui = "0.30"
+crossterm = "0.29"
+tun = { version = "0.8", features = ["async"] }
+ipstack = "1"
+netdev = "0.46"
+
+[target.'cfg(windows)'.dependencies]
+libloading = "0.9"
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Networking_WinSock",
+    "Win32_Networking_WinInet",
+    "Win32_UI_Shell",
+] }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = true
