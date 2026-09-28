@@ -202,7 +202,7 @@ func SetTTL(conn net.Conn, isIPv4 bool, ttl uint8) error {
 
 	// Invoke Control to manipulate file descriptor directly.
 	err = rawConn.Control(func(fd uintptr) {
-		sysErr = syscall.SetsockoptInt(int(fd), level, opt, int(ttl))
+		sysErr = setsockoptInt(fd, level, opt, int(ttl))
 	})
 	if err != nil {
 		return err

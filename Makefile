@@ -1,7 +1,10 @@
-.PHONY: build test lint fmt fmt-check pre-commit claude
+.PHONY: build build-windows test lint fmt fmt-check pre-commit claude
 
 build:
 	go build ./cmd/...
+
+build-windows:
+	GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -o spoofdpi.exe ./cmd/spoofdpi
 
 test:
 	go test $(ARGS) -race -tags network ./... -v

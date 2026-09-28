@@ -32,3 +32,13 @@ To build the executable, ensure **CGO is enabled** and run the standard Go build
 ```console
 $ CGO_ENABLED=1 go build -ldflags="-w -s" ./cmd/...
 ```
+
+## Building for Windows
+
+The Windows build does not need CGO and can be cross-compiled from any OS (`windows/386` and `windows/amd64` are supported):
+
+```console
+$ GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-w -s" -o spoofdpi.exe ./cmd/spoofdpi
+```
+
+Or use `make build-windows`. Packet capture features on Windows require [Npcap](https://npcap.com/) (`wpcap.dll`) to be installed at runtime.

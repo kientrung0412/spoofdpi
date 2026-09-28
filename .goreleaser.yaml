@@ -49,6 +49,23 @@ builds:
     main: ./cmd/spoofdpi
     binary: '{{ .ProjectName }}'
 
+  # ---------------------------------------------------------------------------
+  # Windows Builds (Pure Go)
+  # ---------------------------------------------------------------------------
+  # Packet capture requires Npcap (wpcap.dll) to be installed at runtime.
+  - id: 'windows'
+    goos: [windows]
+    # gopacket/pcap v1.1.19 has no windows/arm64 support.
+    goarch: ['386', amd64]
+    env: [ "CGO_ENABLED=0" ]
+    ldflags:
+      - -s -w
+      - -X "main.version={{ .Version }}"
+      - -X "main.commit={{ .ShortCommit }}"
+      - -X "main.build=goreleaser"
+    main: ./cmd/spoofdpi
+    binary: '{{ .ProjectName }}'
+
 source:
   enabled: true
   prefix_template: '{{ .ProjectName }}-{{ .Version }}/'
@@ -65,8 +82,11 @@ archives:
       {{- else if eq .Arch "amd64" }}x86_64
       {{- else }}{{ .Arch }}{{ end -}}
     formats: ['tar.gz']
+    format_overrides:
+      - goos: windows
+        formats: ['zip']
     # Explicitly list builds to include (optional but good for clarity)
-    ids: ['linux', 'darwin']
+    ids: ['linux', 'darwin', 'windows']
       
 
 # Linux Packages
